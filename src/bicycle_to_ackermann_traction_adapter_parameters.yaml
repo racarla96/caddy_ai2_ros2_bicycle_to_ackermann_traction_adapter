@@ -1,0 +1,68 @@
+bicycle_to_ackermann_traction_adapter:
+
+  wheelbase:
+    {
+      type: double,
+      default_value: 0.0,
+      description: "Distance between front and rear wheels. For details see: https://en.wikipedia.org/wiki/Wheelbase",
+      read_only: true,
+      validation: {
+        gt<>: [0.0]
+      }
+    }
+
+  track_width:
+    {
+      type: double,
+      default_value: 0.0,
+      description: "Steering wheel track length.",
+      read_only: true,
+      validation: {
+        gt<>: [0.0]
+      }
+    }
+
+  wheel_radius:
+    {
+      type: double,
+      default_value: 0.0,
+      description: "Radius of the wheels.",
+      read_only: true,
+      validation: {
+        gt<>: [0.0]
+      }
+    }
+
+  input_steering_name: 
+    {
+      type: string,
+      description: "Name of the input steer interface",
+      validation: {
+        not_empty<>: []
+      },
+      read_only: true
+    }
+
+  input_traction_name: 
+    {
+      type: string,
+      description: "Name of the input traction interface",
+      validation: {
+        not_empty<>: []
+      },
+      read_only: true
+    }
+
+  output_traction_names: 
+    {
+      type: string_array,
+      description: "Names of traction joints.",
+      default_value: [],
+      read_only: true,
+      validation: {
+        size_lt<>: [3],
+        size_gt<>: [1],
+        unique<>: null,
+        not_empty<>: null,
+      }
+    }

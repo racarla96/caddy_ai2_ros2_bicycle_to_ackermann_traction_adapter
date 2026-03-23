@@ -1,0 +1,10 @@
+<library path="bicycle_to_ackermann_traction_adapter">
+  <class
+    name="bicycle_to_ackermann_traction_adapter/BicycleToAckermannTractionAdapter"
+    type="bicycle_to_ackermann_traction_adapter::BicycleToAckermannTractionAdapter"
+    base_class_type="controller_interface::ChainableControllerInterface">
+    <description>
+      Bicycle to Ackermann Steering Adapter controller.
+    </description>
+  </class>
+</library>
