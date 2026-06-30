@@ -53,7 +53,15 @@ bicycle_to_ackermann_traction_adapter:
       read_only: true
     }
 
-  output_traction_names: 
+  by_reference_or_by_state:
+    {
+      type: bool,
+      default_value: false,
+      description: "Operation mode: false = by_reference (upstream chained reference as input), true = by_state (hardware sensor as input).",
+      read_only: true
+    }
+
+  output_traction_names:
     {
       type: string_array,
       description: "Names of traction joints.",

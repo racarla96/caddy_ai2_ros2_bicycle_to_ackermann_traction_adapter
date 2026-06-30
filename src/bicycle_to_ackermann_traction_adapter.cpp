@@ -34,6 +34,7 @@ controller_interface::CallbackReturn BicycleToAckermannTractionAdapter::on_confi
     wheelbase_ = bicycle_to_ackermann_traction_adapter_params_.wheelbase;
     track_width_ = bicycle_to_ackermann_traction_adapter_params_.track_width;
     wheel_radius_ = bicycle_to_ackermann_traction_adapter_params_.wheel_radius;
+    by_reference_or_by_state_ = bicycle_to_ackermann_traction_adapter_params_.by_reference_or_by_state;
   }
   catch (const std::exception & e)
   {
@@ -51,7 +52,7 @@ controller_interface::InterfaceConfiguration BicycleToAckermannTractionAdapter::
   for (size_t i = 0; i < nr_output_steer_itfs_; i++)
   {
     command_interfaces_config.names.push_back(
-      bicycle_to_ackermann_traction_adapter_params_.output_traction_names[i] 
+      bicycle_to_ackermann_traction_adapter_params_.output_traction_names[i]
       + "/" + hardware_interface::HW_IF_VELOCITY);
   }
   return command_interfaces_config;
@@ -61,16 +62,30 @@ controller_interface::InterfaceConfiguration BicycleToAckermannTractionAdapter::
 {
   controller_interface::InterfaceConfiguration state_interfaces_config;
   state_interfaces_config.type = controller_interface::interface_configuration_type::INDIVIDUAL;
-  state_interfaces_config.names.reserve(nr_output_steer_itfs_+1);
-  for (size_t i = 0; i < nr_output_steer_itfs_; i++)
+
+  if (by_reference_or_by_state_)
   {
     state_interfaces_config.names.push_back(
-      bicycle_to_ackermann_traction_adapter_params_.output_traction_names[i] 
+      bicycle_to_ackermann_traction_adapter_params_.input_traction_name
       + "/" + hardware_interface::HW_IF_VELOCITY);
-  }
-  state_interfaces_config.names.push_back(
-      bicycle_to_ackermann_traction_adapter_params_.input_steering_name 
+    state_interfaces_config.names.push_back(
+      bicycle_to_ackermann_traction_adapter_params_.input_steering_name
       + "/" + hardware_interface::HW_IF_POSITION);
+  }
+  else
+  {
+    state_interfaces_config.names.reserve(nr_output_steer_itfs_ + 1);
+    for (size_t i = 0; i < nr_output_steer_itfs_; i++)
+    {
+      state_interfaces_config.names.push_back(
+        bicycle_to_ackermann_traction_adapter_params_.output_traction_names[i]
+        + "/" + hardware_interface::HW_IF_VELOCITY);
+    }
+    state_interfaces_config.names.push_back(
+      bicycle_to_ackermann_traction_adapter_params_.input_steering_name
+      + "/" + hardware_interface::HW_IF_POSITION);
+  }
+
   return state_interfaces_config;
 }
 
@@ -82,10 +97,10 @@ BicycleToAckermannTractionAdapter::on_export_state_interfaces()
   state_interfaces_values_.reserve(nr_input_steer_itfs_);
 
     state_interfaces.emplace_back(
-        get_name() 
+        get_name()
         + "/" + bicycle_to_ackermann_traction_adapter_params_.input_traction_name,
         hardware_interface::HW_IF_VELOCITY,
-        &state_interfaces_values_[0]             
+        &state_interfaces_values_[0]
     );
 
     return state_interfaces;
@@ -98,12 +113,12 @@ BicycleToAckermannTractionAdapter::on_export_reference_interfaces()
 
   command_interfaces.reserve(nr_input_steer_itfs_);
   reference_interfaces_.resize(nr_input_steer_itfs_);
- 
+
     command_interfaces.emplace_back(
         get_name()
         + "/" + bicycle_to_ackermann_traction_adapter_params_.input_traction_name,
         hardware_interface::HW_IF_VELOCITY,
-        &reference_interfaces_[0]                  
+        &reference_interfaces_[0]
     );
 
   return command_interfaces;
@@ -139,73 +154,85 @@ controller_interface::return_type BicycleToAckermannTractionAdapter::update_and_
 
   auto logger = get_node()->get_logger();
 
-  // Get current values of the steering joints
-  auto right_traction_vel_op = state_interfaces_[0].get_optional();
-  auto left_traction_vel_op = state_interfaces_[1].get_optional();
-  auto center_steering_angle_op = state_interfaces_[2].get_optional();
-
-  if (!right_traction_vel_op.has_value())
-  {
-    RCLCPP_ERROR(
-      logger, "Unable to retrieve position feedback data for right steering angle");
-    return controller_interface::return_type::ERROR;
-  }
-  if (!left_traction_vel_op.has_value())
-  {
-    RCLCPP_ERROR(
-      logger, "Unable to retrieve position feedback data for left steering angle");
-    return controller_interface::return_type::ERROR;
-  }
-  if (!center_steering_angle_op.has_value())
-  {
-    RCLCPP_ERROR(
-      logger, "Unable to retrieve position feedback data for center steering angle");
-    return controller_interface::return_type::ERROR;
-  }
-
-  right_traction_vel_ = right_traction_vel_op.value();
-  left_traction_vel_ = left_traction_vel_op.value();
-   state_interfaces_values_[0] = ((right_traction_vel_ + left_traction_vel_) / 2) * wheel_radius_;
-
-  //RCLCPP_INFO(logger, "--------------------------------");
-  //RCLCPP_INFO(logger, "Right traction velocity: %f", right_traction_vel_);
-  //RCLCPP_INFO(logger, "Left traction velocity: %f", left_traction_vel_);
-  //RCLCPP_INFO(logger, "Mean linear velocity: %f", state_interfaces_values_[0]);
-
-  center_steering_angle_ = center_steering_angle_op.value();
-
   right_traction_vel_ = 0.0;
   left_traction_vel_ = 0.0;
 
-  if (!std::isnan(reference_interfaces_[0])){
+  if (by_reference_or_by_state_)
+  {
+    // by_state: input = hardware sensors (center traction velocity + center steering angle) → apply kinematics → output individual wheel velocities
+    auto center_traction_vel_op = state_interfaces_[0].get_optional();
+    auto center_steering_angle_op = state_interfaces_[1].get_optional();
 
-    center_traction_vel_ = reference_interfaces_[0]; // rad/s
+    if (!center_traction_vel_op.has_value())
+    {
+      RCLCPP_ERROR(logger, "Unable to retrieve velocity data for center traction sensor");
+      return controller_interface::return_type::ERROR;
+    }
+    if (!center_steering_angle_op.has_value())
+    {
+      RCLCPP_ERROR(logger, "Unable to retrieve position data for center steering angle sensor");
+      return controller_interface::return_type::ERROR;
+    }
 
-    //RCLCPP_INFO(logger, "Center steering angle: %f", center_steering_angle_);
-    //RCLCPP_INFO(logger, "Center traction velocity: %f", center_traction_vel_);
+    center_traction_vel_ = center_traction_vel_op.value();
+    center_steering_angle_ = center_steering_angle_op.value();
+
+    state_interfaces_values_[0] = center_traction_vel_ * wheel_radius_;
 
     input_linear_vel_ = center_traction_vel_ * wheel_radius_;
     transmission_factor_ = (track_width_ * tan(center_steering_angle_)) / (2.0 * wheelbase_);
-
     left_traction_vel_ = (input_linear_vel_ * (1.0 - transmission_factor_)) / wheel_radius_;
     right_traction_vel_ = (input_linear_vel_ * (1.0 + transmission_factor_)) / wheel_radius_;
   }
+  else
+  {
+    // by_reference: read individual wheel states → compute center velocity feedback → apply kinematics from reference
+    auto right_traction_vel_op = state_interfaces_[0].get_optional();
+    auto left_traction_vel_op = state_interfaces_[1].get_optional();
+    auto center_steering_angle_op = state_interfaces_[2].get_optional();
 
-  //RCLCPP_INFO(logger, "Right traction velocity: %f", right_traction_vel_);
-  //RCLCPP_INFO(logger, "Left traction velocity: %f", left_traction_vel_);
+    if (!right_traction_vel_op.has_value())
+    {
+      RCLCPP_ERROR(logger, "Unable to retrieve velocity feedback data for right traction");
+      return controller_interface::return_type::ERROR;
+    }
+    if (!left_traction_vel_op.has_value())
+    {
+      RCLCPP_ERROR(logger, "Unable to retrieve velocity feedback data for left traction");
+      return controller_interface::return_type::ERROR;
+    }
+    if (!center_steering_angle_op.has_value())
+    {
+      RCLCPP_ERROR(logger, "Unable to retrieve position feedback data for center steering angle");
+      return controller_interface::return_type::ERROR;
+    }
 
-  // Set command interfaces (order: right joint, left joint)
+    right_traction_vel_ = right_traction_vel_op.value();
+    left_traction_vel_ = left_traction_vel_op.value();
+    state_interfaces_values_[0] = ((right_traction_vel_ + left_traction_vel_) / 2) * wheel_radius_;
+
+    center_steering_angle_ = center_steering_angle_op.value();
+
+    right_traction_vel_ = 0.0;
+    left_traction_vel_ = 0.0;
+
+    if (!std::isnan(reference_interfaces_[0])) {
+      center_traction_vel_ = reference_interfaces_[0];
+      input_linear_vel_ = center_traction_vel_ * wheel_radius_;
+      transmission_factor_ = (track_width_ * tan(center_steering_angle_)) / (2.0 * wheelbase_);
+      left_traction_vel_ = (input_linear_vel_ * (1.0 - transmission_factor_)) / wheel_radius_;
+      right_traction_vel_ = (input_linear_vel_ * (1.0 + transmission_factor_)) / wheel_radius_;
+    }
+
+    reference_interfaces_[0] = std::numeric_limits<double>::quiet_NaN();
+  }
+
   if (!command_interfaces_[0].set_value(right_traction_vel_)) {
-    RCLCPP_WARN(get_node()->get_logger(), "Failed to set right steering");
+    RCLCPP_WARN(logger, "Failed to set right traction");
   }
-
   if (!command_interfaces_[1].set_value(left_traction_vel_)) {
-    RCLCPP_WARN(get_node()->get_logger(), "Failed to set left steering");
+    RCLCPP_WARN(logger, "Failed to set left traction");
   }
-
-  // Reset reference
-  reference_interfaces_[0] = std::numeric_limits<double>::quiet_NaN();
-  reference_interfaces_[1] = std::numeric_limits<double>::quiet_NaN();
 
   return controller_interface::return_type::OK;
 }
