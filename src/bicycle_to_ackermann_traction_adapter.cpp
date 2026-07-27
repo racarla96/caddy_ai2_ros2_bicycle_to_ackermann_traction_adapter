@@ -177,7 +177,7 @@ controller_interface::return_type BicycleToAckermannTractionAdapter::update_and_
     center_traction_vel_ = center_traction_vel_op.value();
     center_steering_angle_ = center_steering_angle_op.value();
 
-    state_interfaces_values_[0] = center_traction_vel_ * wheel_radius_;
+    state_interfaces_values_[0] = center_traction_vel_;
 
     input_linear_vel_ = center_traction_vel_ * wheel_radius_;
     transmission_factor_ = (track_width_ * tan(center_steering_angle_)) / (2.0 * wheelbase_);
@@ -209,7 +209,7 @@ controller_interface::return_type BicycleToAckermannTractionAdapter::update_and_
 
     right_traction_vel_ = right_traction_vel_op.value();
     left_traction_vel_ = left_traction_vel_op.value();
-    state_interfaces_values_[0] = ((right_traction_vel_ + left_traction_vel_) / 2) * wheel_radius_;
+    state_interfaces_values_[0] = (right_traction_vel_ + left_traction_vel_) / 2;
 
     center_steering_angle_ = center_steering_angle_op.value();
 
